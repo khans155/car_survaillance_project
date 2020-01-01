@@ -7,7 +7,6 @@ import cv2
 import shlex
 import subprocess
 import imutils
-import numpy as np
 from multiprocessing import Process
 
 recording_len = 10  # 5 min videos
