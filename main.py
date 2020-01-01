@@ -129,7 +129,7 @@ def action():
                         lostFrames = int(travelTime * camera.framerate) + 3
                         t0 = time.time()
                         break
-                if breaK
+                if breaK:
                     break
             move_motor(250, axisCentered=True)
             cv2.destroyAllWindows()
