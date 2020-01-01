@@ -9,6 +9,7 @@ import subprocess
 import imutils
 from multiprocessing import Process
 
+commit = True
 recording_len = 10  # 5 min videos
 recording = False
 ignition = False
