@@ -10,16 +10,15 @@ import imutils
 import RPi.GPIO as GPIO
 from multiprocessing import Process
 
-recording_len = 10*60            # 10 min video loop
+recording_len = 10            # 10 min video loop
 recording = False
 ignitionPin = 12
-motion_record_len = 15        # Minimum 5 min video
+motion_record_len = 10        # Minimum 5 min video
 
 
 def action():
     move_motor(250, axisCentered=True)  # Initialize motor, make sure its centered
     global recording
-    t0 = None
     threadList = []
     while True:
         ignition = check_ignition()
@@ -27,7 +26,6 @@ def action():
             with picamera.PiCamera() as camera:
                 camera.resolution = (1280, 720)
                 camera.framerate = 30
-                rawCapture = PiRGBArray(camera, size=(1280, 720))
                 time.sleep(1)
                 savePath = '/share/Remotecode/ignition_on_recordings/'
                 filename = dt.datetime.now().strftime('%d_%m_20%y__%H_%M_%S')
@@ -112,6 +110,7 @@ def action():
                             i = 0
                             avg = None
                             camera.stop_recording()
+                            # noinspection PyUnboundLocalVariable
                             threadList.append(Process(target=convert_video, args=(filename, savePath,)).start())
                             recordingMotion = False
                             motion = False
@@ -157,9 +156,9 @@ def check_ignition():
 
 def convert_video(filename, savePath):
     command = shlex.split(f'MP4Box -add {savePath}{filename}.h264 {savePath}{filename}.mp4')
-    output = subprocess.check_output(command, stderr=subprocess.STDOUT)
+    subprocess.check_output(command, stderr=subprocess.STDOUT)
     command = shlex.split(f'rm {savePath}{filename}.h264')
-    output = subprocess.check_output(command, stderr=subprocess.STDOUT)
+    subprocess.check_output(command, stderr=subprocess.STDOUT)
     print(f'Subprocess: Conversion of {filename}.h264 into MP4 completed.')
 
 
@@ -172,7 +171,7 @@ def move_motor(moveTo, axisCentered=False):
         with open('motor_data.json', 'w') as file:
             json.dump(motorData, file)
         command = shlex.split(f'python move_motor.py')
-        output = subprocess.check_output(command, stderr=subprocess.STDOUT)
+        subprocess.check_output(command, stderr=subprocess.STDOUT)
         print('Subprocess: Motor moved, centered')
     else:
         with open('motor_data.json', 'r') as file:
@@ -188,8 +187,7 @@ def move_motor(moveTo, axisCentered=False):
         with open('motor_data.json', 'w') as file:
             json.dump(motorData, file)
         command = shlex.split(f'python move_motor.py')
-        output = subprocess.check_output(command, stderr=subprocess.STDOUT)
-        return motorData
+        subprocess.check_output(command, stderr=subprocess.STDOUT)
 
 
 if __name__ == '__main__':
