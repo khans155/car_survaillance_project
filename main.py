@@ -2,23 +2,27 @@ import time
 import picamera
 from picamera.array import PiRGBArray
 import datetime as dt
+import logging
 import json
 import cv2
 import shlex
 import subprocess
+import shutil
 import imutils
 import RPi.GPIO as GPIO
 from multiprocessing import Process
 
-recording_len = 10            # 10 min video loop
+recording_len = 10*60           # 10 min video loop
 recording = False
 ignitionPin = 12
-motion_record_len = 10        # Minimum 5 min video
-
+motion_record_len = 5*60        # Minimum 5 min video
+logging.basicConfig(filename="messages.log", level=logging.DEBUG)
 
 def action():
     move_motor(250, axisCentered=True)  # Initialize motor, make sure its centered
     global recording
+    print('MAIN: Program initiated.')
+    logging.debug('MAIN: Program initiated.')
     threadList = []
     while True:
         ignition = check_ignition()
@@ -29,8 +33,9 @@ def action():
                 time.sleep(1)
                 savePath = '/share/Remotecode/ignition_on_recordings/'
                 filename = dt.datetime.now().strftime('%d_%m_20%y__%H_%M_%S')
-                camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=1000000)
+                camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=5000000)
                 print(f'Ignition on: New recording started at {filename}...')
+                logging.debug(f'Ignition on: New recording started at {filename}...')
                 recording = True
                 t0 = time.time()
                 t1 = time.time()
@@ -41,6 +46,7 @@ def action():
                 camera.stop_recording()
                 recording = False
                 print(f'Ignition on: Recording {filename}.h264 done, starting background conversion into MP4...')
+                logging.debug(f'Ignition on: Recording {filename}.h264 done, starting background conversion into MP4...')
                 threadList.append(Process(target=convert_video, args=(filename, savePath,)).start())
         else:  # This section checks for motion and records if motion is detected
             move_motor(250, axisCentered=True)
@@ -70,6 +76,7 @@ def action():
                     camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=1000000)
                     rawCapture = PiRGBArray(camera, size=(1280, 720))
                     print(f'Sentry mode: Motion detected. Recording started on {filename}.')
+                    logging.debug(f'Sentry mode: Motion detected. Recording started on {filename}.')
                     recordingMotion = True
                 for capture in camera.capture_continuous(rawCapture, format='bgr', use_video_port=True):
                     frame = capture.array
@@ -110,11 +117,11 @@ def action():
                             i = 0
                             avg = None
                             camera.stop_recording()
-                            # noinspection PyUnboundLocalVariable
                             threadList.append(Process(target=convert_video, args=(filename, savePath,)).start())
                             recordingMotion = False
                             motion = False
                             print('Sentry mode: Recording stopped.')
+                            logging.debug('Sentry mode: Recording stopped.')
                             Process(target=move_motor, args=(250, True, )).start()
                             break
                         except Exception:
@@ -155,28 +162,52 @@ def check_ignition():
 
 
 def convert_video(filename, savePath):
+    with open('video_itinerary.json', 'r') as file:
+        videoItinerary = json.load(file)
+    videoItinerary.append([filename, savePath])
     command = shlex.split(f'MP4Box -add {savePath}{filename}.h264 {savePath}{filename}.mp4')
     subprocess.check_output(command, stderr=subprocess.STDOUT)
     command = shlex.split(f'rm {savePath}{filename}.h264')
     subprocess.check_output(command, stderr=subprocess.STDOUT)
-    print(f'Subprocess: Conversion of {filename}.h264 into MP4 completed.')
+    print(f'Video Conversion: Conversion of {filename}.h264 into MP4 completed.')
+    logging.debug(f'Video Conversion: Conversion of {filename}.h264 into MP4 completed.')
+    Process(target=preserve_storage, args=(videoItinerary, )).start()
+
+
+def preserve_storage(videoItinerary):
+    total, used, free = shutil.disk_usage("/")
+    total, used, free = total // 2 ** 30, used // 2 ** 30, free // 2 ** 30
+    used = 60
+    while used > 50 and videoItinerary != []:
+        video = videoItinerary[0]
+        try:
+            command = shlex.split(f'rm {video[1]}{video[0]}.mp4')
+            subprocess.check_output(command, stderr=subprocess.STDOUT)
+            print(f'Storage Management: {video[1]}{video[0]}.mp4 deleted to preserve storage.')
+            logging.debug(f'Storage Management: {video[1]}{video[0]}.mp4 deleted to preserve storage.')
+        except subprocess.CalledProcessError:
+            print(f'Storage Management: {video[1]}{video[0]}.mp4 not found, removing from itinerary.')
+            logging.debug(f'Storage Management: {video[1]}{video[0]}.mp4 not found, removing from itinerary.')
+        del videoItinerary[0]
+
+    with open('video_itinerary.json', 'w') as file:
+        json.dump(videoItinerary, file)
 
 
 def move_motor(moveTo, axisCentered=False):
+    with open('motor_data.json', 'r') as file:
+        prevMotorData = json.load(file)
+    frm = prevMotorData[1]
     if axisCentered is True:
-        with open('motor_data.json', 'r') as file:
-            prevMotorData = json.load(file)
         frm = prevMotorData[1]
         motorData = [frm, moveTo]
         with open('motor_data.json', 'w') as file:
             json.dump(motorData, file)
         command = shlex.split(f'python move_motor.py')
         subprocess.check_output(command, stderr=subprocess.STDOUT)
-        print('Subprocess: Motor moved, centered')
+        print('Motor Controller: Motor centered')
+        logging.debug('Motor Controller: Motor centered')
     else:
-        with open('motor_data.json', 'r') as file:
-            prevMotorData = json.load(file)
-        frm = prevMotorData[1]
         moveTo = (moveTo - 250 + frm) * 0.72222
         if moveTo > 500:
             motorData = [frm, 500]
