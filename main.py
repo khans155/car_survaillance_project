@@ -1,62 +1,66 @@
 import time
-import picamera
-from picamera.array import PiRGBArray
-import datetime as dt
-import logging
-import json
-import cv2
-import shlex
-import subprocess
-import shutil
-import imutils
-import RPi.GPIO as GPIO
-from multiprocessing import Process
+import picamera  # To access camera module
+from picamera.array import PiRGBArray  # To capture frames from camera in array form
+import datetime as dt   # To keep track of the date
+import logging       # For debugging
+import json   # For communicating with other scripts and saving data
+import cv2    # For visual processing to detect motion
+import shlex  # To execute os commands
+import subprocess  # To execute os commands
+import shutil   # For keeping tack of storage
+import imutils  # For frame processing
+import RPi.GPIO as GPIO   # To access Raspberry Pi GPIO pins (to move motor and detect ignition state)
+from multiprocessing import Process  # To initiate processes in background
 
-recording_len = 10*60           # 10 min video loop
-recording = False
-ignitionPin = 12
-motion_record_len = 5*60        # Minimum 5 min video
-logging.basicConfig(filename="messages.log", level=logging.DEBUG)
+recording_len = 10*60           # 10 min video loop for ignition on recording
+ignitionPin = 12    # Raspberry Pi board location of ignition pin
+motorPin = 11       # Raspberry Pi board location of ignition pin
+maxStorage = 70                 # Maximum storage allowed in GB for video files
+motion_record_len = 5*60        # Minimum 5 min video for motion detection
+logging.basicConfig(filename="program_logs.log", level=logging.DEBUG)
 
-def action():
-    move_motor(250, axisCentered=True)  # Initialize motor, make sure its centered
-    global recording
+
+# Main program that runs on loop
+def action():  # Initialize motor, make sure its centered
     print('MAIN: Program initiated.')
     logging.debug('MAIN: Program initiated.')
-    threadList = []
+    move_motor(250, axisCentered=True)    # Initialize motor, make sure its centered
+    threadList = []   # To keep track of all open threads in case program need to be closed
+    ignition = check_ignition()
     while True:
-        ignition = check_ignition()
         if ignition:  # This section will record for recording_len on a loop until car ignition is off
             with picamera.PiCamera() as camera:
                 camera.resolution = (1280, 720)
                 camera.framerate = 30
-                time.sleep(1)
+                time.sleep(1)     # Give time for the camera to warm up
                 savePath = '/share/Remotecode/ignition_on_recordings/'
                 filename = dt.datetime.now().strftime('%d_%m_20%y__%H_%M_%S')
                 camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=5000000)
                 print(f'Ignition on: New recording started at {filename}...')
                 logging.debug(f'Ignition on: New recording started at {filename}...')
-                recording = True
+
                 t0 = time.time()
                 t1 = time.time()
                 while ignition and ((t1 - t0) < recording_len):
-                    camera.wait_recording(0.5)
                     ignition = check_ignition()
                     t1 = time.time()
                 camera.stop_recording()
-                recording = False
+
                 print(f'Ignition on: Recording {filename}.h264 done, starting background conversion into MP4...')
                 logging.debug(f'Ignition on: Recording {filename}.h264 done, starting background conversion into MP4...')
+
+                # Video is converted in the background using multiprocessing so recording starts back up right away.
                 threadList.append(Process(target=convert_video, args=(filename, savePath,)).start())
         else:  # This section checks for motion and records if motion is detected
-            move_motor(250, axisCentered=True)
             prev = 250
             width = 500
             camera = picamera.PiCamera()
             camera.resolution = (1280, 720)
             camera.framerate = 30
-            rawCapture = PiRGBArray(camera, size=(1280, 720))
+            rawCapture = PiRGBArray(camera, size=(1280, 720))  # RawCapture object used to process frames in OpenCV
             time.sleep(1)
+
+            # Initiating variables
             avg = None
             i = 0
             motion = False
@@ -66,28 +70,31 @@ def action():
             switch = False
 
             while True:
-                if motion and not recordingMotion:
+                if motion and not recordingMotion:  # Camera object must be re-initiated to start recording
                     camera.close()
                     camera = picamera.PiCamera()
                     camera.resolution = (1280, 720)
                     camera.framerate = 30
                     savePath = '/share/Remotecode/sentry_mode_recordings/'
                     filename = dt.datetime.now().strftime('%d_%m_20%y__%H_%M_%S')
-                    camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=1000000)
+                    camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=10000000)
                     rawCapture = PiRGBArray(camera, size=(1280, 720))
                     print(f'Sentry mode: Motion detected. Recording started on {filename}.')
                     logging.debug(f'Sentry mode: Motion detected. Recording started on {filename}.')
                     recordingMotion = True
+
+                # Capturing frames from camera stream for visual processing
                 for capture in camera.capture_continuous(rawCapture, format='bgr', use_video_port=True):
                     frame = capture.array
-                    if i < lostFrames:
+                    if i < lostFrames:  # Frames that are ignored when camera moves
                         i += 1
                         rawCapture.truncate(0)
                         continue
 
-                    frame = imutils.resize(frame, width=width)
-                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    gray = cv2.GaussianBlur(gray, (21, 21), 0)
+                    # Visual processing to detect motion
+                    frame = imutils.resize(frame, width=width)   # Resizing frame to desired width
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # Removing unneeded color from frame
+                    gray = cv2.GaussianBlur(gray, (21, 21), 0)  # Blur frame to remove noise
                     rawCapture.truncate(0)
                     if avg is None:
                         avg = gray.copy().astype("float")
@@ -95,7 +102,7 @@ def action():
                         continue
                     cv2.accumulateWeighted(gray, avg, 0.5)
                     frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
-                    thresh = cv2.threshold(frameDelta, 8, 255, cv2.THRESH_BINARY)[1]
+                    thresh = cv2.threshold(frameDelta, 7, 255, cv2.THRESH_BINARY)[1]
                     thresh = cv2.dilate(thresh, None, iterations=5)
                     contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                     contours = imutils.grab_contours(contours)
@@ -108,49 +115,64 @@ def action():
                         contourX += x + w / 2
                         contourXlen += 1
                         motion = True
+
+                    # Conditions for stopping recording
                     ignition = check_ignition()
                     if recordingMotion and (((time.time() - t0) > motion_record_len) or ignition):
                         try:
+                            # When recording is stopped motor will be centered again thus lost frames must be calculated
+                            # and avg set to None
                             travelTime = (abs(250 - prev) // 10) * 0.02
                             prev = 250
                             lostFrames = int(travelTime * camera.framerate) + 3
                             i = 0
                             avg = None
+
+                            # Stops recording and activates convert_video() function in background
                             camera.stop_recording()
                             threadList.append(Process(target=convert_video, args=(filename, savePath,)).start())
+
+                            # Relevant variables are reset
                             recordingMotion = False
                             motion = False
+
+                            # Log results and move motor in background to save time
                             print('Sentry mode: Recording stopped.')
                             logging.debug('Sentry mode: Recording stopped.')
                             Process(target=move_motor, args=(250, True, )).start()
                             break
-                        except Exception:
+                        except Exception:  # For ignoring random errors with stop_recording() method
                             break
 
+                    # Condition for breaking out of for loop and outside while loop
                     if not recordingMotion and ignition:
                         switch = True
                         break
 
+                    # Some processing of x position of detected object to determine where the motor needs to be
+                    # moved to and the frames lost in the process
                     if contourXlen != 0:
                         contourX = contourX / contourXlen
                         i = 0
                         contourX = (contourX // 10) * 10
-                        avg = None
+                        avg = None  # Because camera moves to new position
                         Process(target=move_motor, args=(contourX,)).start()
+
+                        # Calculation of frames that need to be ignored and setting new motor position in prev variable
                         contourX = (contourX - 250 + prev) * 0.72222
                         travelTime = (abs(contourX - prev) // 10) * 0.02
                         prev = contourX
                         lostFrames = int(travelTime * camera.framerate) + 3
-                        t0 = time.time()
+
+                        t0 = time.time()  # To keep track of length of recording
                         break
                 if switch:
                     break
-            move_motor(250, axisCentered=True)
-            cv2.destroyAllWindows()
+            move_motor(250, axisCentered=True)  # Centre the camera for ignition recording
             camera.close()
 
 
-def check_ignition():
+def check_ignition():    # Checks ignition pin for high which indicates ignition is on.
     GPIO.setmode(GPIO.BOARD)
     GPIO.setup(ignitionPin, GPIO.IN)
     if GPIO.input(ignitionPin) == GPIO.HIGH:
@@ -161,60 +183,72 @@ def check_ignition():
     return ignition
 
 
-def convert_video(filename, savePath):
-    with open('video_itinerary.json', 'r') as file:
+def convert_video(filename, savePath):  # Converts raw video output from camera.start_recording() playable MP4 format
+    with open('video_itinerary.json', 'r') as file:  # Itinerary keeps track of all videos recorded
         videoItinerary = json.load(file)
-    videoItinerary.append([filename, savePath])
+    videoItinerary.append([filename, savePath]) # Adding the newest video
+    # Convert video to MP4 using system installed MP4Box
     command = shlex.split(f'MP4Box -add {savePath}{filename}.h264 {savePath}{filename}.mp4')
     subprocess.check_output(command, stderr=subprocess.STDOUT)
+    # Delete H264 file using system rm command
     command = shlex.split(f'rm {savePath}{filename}.h264')
     subprocess.check_output(command, stderr=subprocess.STDOUT)
+    # Log results into log file and print to terminal
     print(f'Video Conversion: Conversion of {filename}.h264 into MP4 completed.')
     logging.debug(f'Video Conversion: Conversion of {filename}.h264 into MP4 completed.')
-    Process(target=preserve_storage, args=(videoItinerary, )).start()
+    preserve_storage(videoItinerary)
 
 
-def preserve_storage(videoItinerary):
+def preserve_storage(videoItinerary):   # Checks storage and deletes older videos if maximum is exceeded
     total, used, free = shutil.disk_usage("/")
     total, used, free = total // 2 ** 30, used // 2 ** 30, free // 2 ** 30
-    used = 60
-    while used > 50 and videoItinerary != []:
-        video = videoItinerary[0]
+
+    # Check if used storage exceeds maximum, ignore if itinerary is empty
+    while used > maxStorage and videoItinerary != []:
+        video = videoItinerary[0]  # Oldest video in itinerary
         try:
+            # Try to remove old video
             command = shlex.split(f'rm {video[1]}{video[0]}.mp4')
             subprocess.check_output(command, stderr=subprocess.STDOUT)
             print(f'Storage Management: {video[1]}{video[0]}.mp4 deleted to preserve storage.')
             logging.debug(f'Storage Management: {video[1]}{video[0]}.mp4 deleted to preserve storage.')
         except subprocess.CalledProcessError:
+            # If removing oldest video failed log to log file.
             print(f'Storage Management: {video[1]}{video[0]}.mp4 not found, removing from itinerary.')
             logging.debug(f'Storage Management: {video[1]}{video[0]}.mp4 not found, removing from itinerary.')
         del videoItinerary[0]
+        total, used, free = shutil.disk_usage("/")
+        total, used, free = total // 2 ** 30, used // 2 ** 30, free // 2 ** 30
 
+    # Update itinerary
     with open('video_itinerary.json', 'w') as file:
         json.dump(videoItinerary, file)
 
 
-def move_motor(moveTo, axisCentered=False):
-    with open('motor_data.json', 'r') as file:
+def move_motor(moveTo, axisCentered=False):   # Launches motor_mover.py script which moves motor.
+    with open('motor_data.json', 'r') as file:  # File used to communicate with move_motor.py script
         prevMotorData = json.load(file)
     frm = prevMotorData[1]
-    if axisCentered is True:
+
+    if axisCentered is True:     # Moves motor directly to the moveTo value
         frm = prevMotorData[1]
-        motorData = [frm, moveTo]
+        motorData = [frm, moveTo, motorPin]
         with open('motor_data.json', 'w') as file:
             json.dump(motorData, file)
         command = shlex.split(f'python move_motor.py')
         subprocess.check_output(command, stderr=subprocess.STDOUT)
         print('Motor Controller: Motor centered')
         logging.debug('Motor Controller: Motor centered')
-    else:
-        moveTo = (moveTo - 250 + frm) * 0.72222
-        if moveTo > 500:
-            motorData = [frm, 500]
-        elif moveTo < 0:
-            motorData = [frm, 0]
+
+    else:   # Converts moveTo value from camera range to motor range then moves motor.
+        # Calculation is based on motor range of motion, frame width, and camera field of view.
+        moveTo = (moveTo - 250 + frm) * 0.72222  # 0.72222 factor used to compensate for camera field of view
+        if moveTo > 500:  # 500 corresponds to 180 degrees and motor cant move past that
+            motorData = [frm, 500, motorPin]
+        elif moveTo < 0:  # 0 corresponds to 0 degrees and motor cant move past that
+            motorData = [frm, 0, motorPin]
         else:
-            motorData = [frm, moveTo]
+            motorData = [frm, moveTo, motorPin]
         with open('motor_data.json', 'w') as file:
             json.dump(motorData, file)
         command = shlex.split(f'python move_motor.py')

@@ -3,11 +3,12 @@ import time
 import json
 
 
-def update_motor(motorPin):
+def update_motor():
 
     with open('motor_data.json', 'r') as file:
         motorData = json.load(file)
 
+    motorPin = motorData[2]
     GPIO.setmode(GPIO.BOARD)
     GPIO.setup(motorPin, GPIO.OUT)
     GPIO.output(motorPin, GPIO.LOW)
@@ -32,6 +33,6 @@ def update_motor(motorPin):
         GPIO.cleanup()
 
 
-update_motor(11)
+update_motor()
 
 
