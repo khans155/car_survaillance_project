@@ -18,12 +18,16 @@ motorPin = 11  # Raspberry Pi board location of ignition pin
 maxStorage = 70  # Maximum storage allowed in GB for video files
 motion_record_len = 5 * 60  # Minimum 5 min video for motion detection
 logging.basicConfig(filename="/share/Remotecode/program_logs.log", level=logging.DEBUG)
+timeAtIgnitionOff = None
+batteryLimit = 3  # Limit of how long raspi can operate on battery in hours
+ignitionState = None
 
 
 # Main program that runs on loop
 def action():  # Initialize motor, make sure its centered
-    print('MAIN: Program initiated.')
-    logging.debug('MAIN: Program initiated.')
+    timeNow = dt.datetime.now().strftime('%H:%M')
+    print(f'{timeNow} - MAIN: Program initiated.')
+    logging.debug(f'{timeNow} - MAIN: Program initiated.')
     move_motor(250, axisCentered=True)  # Initialize motor, make sure its centered
     threadList = []  # To keep track of all open threads in case program need to be closed
     ignition = check_ignition()
@@ -32,12 +36,14 @@ def action():  # Initialize motor, make sure its centered
     while True:
         if ignition:  # This section will record for recording_len on a loop until car ignition is off
             with picamera.PiCamera() as camera:
+                print('MAIN: Looped recording mode initiated.')
+                logging.debug('MAIN: Looped recording mode initiated.')
                 camera.resolution = (1280, 720)
                 camera.framerate = 30
                 time.sleep(1)  # Give time for the camera to warm up
                 savePath = '/share/Remotecode/ignition_on_recordings/'
                 filename = dt.datetime.now().strftime('%d_%m_20%y__%H_%M_%S')
-                camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=5000000)
+                camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=1000000)
                 add_to_conversion_itinerary([filename, savePath])
                 print(f'Ignition on: New recording started at {filename}...')
                 logging.debug(f'Ignition on: New recording started at {filename}...')
@@ -56,6 +62,8 @@ def action():  # Initialize motor, make sure its centered
                 # Video is converted in the background using multiprocessing so recording starts back up right away.
                 threadList.append(Process(target=convert_video, args=(filename, savePath,)).start())
         else:  # This section checks for motion and records if motion is detected
+            print('MAIN: Sentry mode initiated.')
+            logging.debug('MAIN: Sentry mode initiated.')
             prev = 250
             width = 500
             camera = picamera.PiCamera()
@@ -178,13 +186,32 @@ def action():  # Initialize motor, make sure its centered
 
 
 def check_ignition():  # Checks ignition pin for high which indicates ignition is on.
+    global timeAtIgnitionOff
+    global ignitionState
     GPIO.setmode(GPIO.BOARD)
     GPIO.setup(ignitionPin, GPIO.IN)
-    if GPIO.input(ignitionPin) == GPIO.HIGH:
-        ignition = False
-    else:
+    if ignitionState is None:
+        if GPIO.input(ignitionPin) == GPIO.HIGH:
+            ignition = True
+        else:
+            ignition = False
+        ignitionState = ignition
+    elif GPIO.input(ignitionPin) == GPIO.HIGH and ignitionState is False:
         ignition = True
+        ignitionState = ignition
+    elif ignitionState:
+        ignition = False
+        timeAtIgnitionOff = time.time()
+        ignitionState = ignition
+    else:
+        ignition = ignitionState
     GPIO.cleanup()
+    if timeAtIgnitionOff is not None and ((time.time() - timeAtIgnitionOff) // 60 // 60) > 3 and not ignitionState:
+        timeNow = dt.datetime.now().strftime('%H:%M')
+        print(f'{timeNow} - Power Management: Battery limit reached. Powering off device.')
+        logging.debug(f'{timeNow} - Power Management: Battery limit reached. Powering off device.')
+        time.sleep(1)
+        subprocess.call("sudo poweroff", shell=True)
     return ignition
 
 
@@ -250,8 +277,8 @@ def convert_left_over_videos():
         conversionItinerary = json.load(file)
         readFile = True
     while conversionItinerary:
-        print('Main: Converting left over videos from previous session.')
-        logging.debug('Main: Converting left over videos from previous session.')
+        print('MAIN: Converting left over videos from previous session.')
+        logging.debug('MAIN: Converting left over videos from previous session.')
         for video in conversionItinerary:
             filename = video[0]
             savePath = video[1]
@@ -260,8 +287,8 @@ def convert_left_over_videos():
                 subprocess.check_output(command, stderr=subprocess.STDOUT)
                 command = shlex.split(f'rm {savePath}{filename}.h264')
                 subprocess.check_output(command, stderr=subprocess.STDOUT)
-                print(f'Main: Conversion of {filename}.h264 into MP4 completed.')
-                logging.debug(f'Main: Conversion of {filename}.h264 into MP4 completed.')
+                print(f'MAIN: Conversion of {filename}.h264 into MP4 completed.')
+                logging.debug(f'MAIN: Conversion of {filename}.h264 into MP4 completed.')
                 with open('/share/Remotecode/video_itinerary.json',
                           'r') as file:
                     videoItinerary = json.load(file)
@@ -269,11 +296,11 @@ def convert_left_over_videos():
                 with open('/share/Remotecode/video_itinerary.json', 'w') as file:
                     json.dump(videoItinerary, file)
             except subprocess.CalledProcessError:
-                print(f'Main: Could not convert or delete {video[1]}{video[0]}. Removing from conversion itinerary.')
-                logging.debug(f'Main: Could not convert or delete {video[1]}{video[0]}. Removing from conversion '
+                print(f'MAIN: Could not convert or delete {video[1]}{video[0]}. Removing from conversion itinerary.')
+                logging.debug(f'MAIN: Could not convert or delete {video[1]}{video[0]}. Removing from conversion '
                               f'itinerary.')
             del conversionItinerary[0]
-        print('Main: Converting leftovers done.')
+        print('MAIN: Converting leftovers done.')
     with open('/share/Remotecode/conversion_itinerary.json', 'w') as file:
         json.dump(conversionItinerary, file)
 
