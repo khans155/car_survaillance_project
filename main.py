@@ -19,7 +19,7 @@ maxStorage = 70  # Maximum storage allowed in GB for video files
 motion_record_len = 5 * 60  # Minimum 5 min video for motion detection
 logging.basicConfig(filename="/share/Remotecode/program_logs.log", level=logging.DEBUG)
 timeAtIgnitionOff = None
-batteryLimit = 3  # Limit of how long raspi can operate on battery in hours
+batteryLimit = 1  # Limit of how long raspi can operate on battery in hours
 ignitionState = None
 
 
@@ -195,18 +195,19 @@ def check_ignition():  # Checks ignition pin for high which indicates ignition i
             ignition = True
         else:
             ignition = False
+            timeAtIgnitionOff = time.time()
         ignitionState = ignition
     elif GPIO.input(ignitionPin) == GPIO.HIGH and ignitionState is False:
         ignition = True
         ignitionState = ignition
-    elif ignitionState:
+    elif not (GPIO.input(ignitionPin) == GPIO.HIGH) and ignitionState:
         ignition = False
         timeAtIgnitionOff = time.time()
         ignitionState = ignition
     else:
         ignition = ignitionState
     GPIO.cleanup()
-    if timeAtIgnitionOff is not None and ((time.time() - timeAtIgnitionOff) // 60 // 60) > 3 and not ignitionState:
+    if timeAtIgnitionOff is not None and ((time.time()-timeAtIgnitionOff)//60//60) > batteryLimit and not ignitionState:
         timeNow = dt.datetime.now().strftime('%H:%M')
         print(f'{timeNow} - Power Management: Battery limit reached. Powering off device.')
         logging.debug(f'{timeNow} - Power Management: Battery limit reached. Powering off device.')
