@@ -17,7 +17,7 @@ ignitionPin = 12    # Raspberry Pi board location of ignition pin
 motorPin = 11       # Raspberry Pi board location of ignition pin
 maxStorage = 70                 # Maximum storage allowed in GB for video files
 motion_record_len = 5*60        # Minimum 5 min video for motion detection
-logging.basicConfig(filename="program_logs.log", level=logging.DEBUG)
+logging.basicConfig(filename="/share/Remotecode/program_logs.log", level=logging.DEBUG)
 
 
 # Main program that runs on loop
@@ -36,6 +36,7 @@ def action():  # Initialize motor, make sure its centered
                 savePath = '/share/Remotecode/ignition_on_recordings/'
                 filename = dt.datetime.now().strftime('%d_%m_20%y__%H_%M_%S')
                 camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=5000000)
+                add_to_conversion_itinerary([filename, savePath])
                 print(f'Ignition on: New recording started at {filename}...')
                 logging.debug(f'Ignition on: New recording started at {filename}...')
 
@@ -78,6 +79,7 @@ def action():  # Initialize motor, make sure its centered
                     savePath = '/share/Remotecode/sentry_mode_recordings/'
                     filename = dt.datetime.now().strftime('%d_%m_20%y__%H_%M_%S')
                     camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=10000000)
+                    add_to_conversion_itinerary([filename, savePath])
                     rawCapture = PiRGBArray(camera, size=(1280, 720))
                     print(f'Sentry mode: Motion detected. Recording started on {filename}.')
                     logging.debug(f'Sentry mode: Motion detected. Recording started on {filename}.')
@@ -183,8 +185,30 @@ def check_ignition():    # Checks ignition pin for high which indicates ignition
     return ignition
 
 
+def add_to_conversion_itinerary(video):
+    filename = video[0]
+    savePath = video[1]
+    readFile = False
+    while not readFile:
+        try:
+            with open('/share/Remotecode/conversion_itinerary.json', 'r') as file:
+                conversionItinerary = json.load(file)
+                readFile = True
+        except ValueError:
+            pass
+    conversionItinerary.append([filename, savePath])
+    writeFile = False
+    while not writeFile:
+        try:
+            with open('/share/Remotecode/conversion_itinerary.json', 'w') as file:
+                json.dump(conversionItinerary, file)
+                writeFile = True
+        except ValueError:
+            pass
+
+
 def convert_video(filename, savePath):  # Converts raw video output from camera.start_recording() playable MP4 format
-    with open('video_itinerary.json', 'r') as file:  # Itinerary keeps track of all videos recorded
+    with open('/share/Remotecode/video_itinerary.json', 'r') as file:  # Itinerary keeps track of all videos recorded
         videoItinerary = json.load(file)
     videoItinerary.append([filename, savePath]) # Adding the newest video
     # Convert video to MP4 using system installed MP4Box
@@ -193,6 +217,39 @@ def convert_video(filename, savePath):  # Converts raw video output from camera.
     # Delete H264 file using system rm command
     command = shlex.split(f'rm {savePath}{filename}.h264')
     subprocess.check_output(command, stderr=subprocess.STDOUT)
+    readFile = False
+    while not readFile:
+        try:
+            with open('/share/Remotecode/conversion_itinerary.json', 'r') as file:
+                conversionItinerary = json.load(file)
+                readFile = True
+        except ValueError:
+            pass
+    del conversionItinerary[0]
+    if conversionItinerary != 0:
+        for video in conversionItinerary:
+            filename = video[0]
+            savePath = video[1]
+            command = shlex.split(f'MP4Box -add {savePath}{filename}.h264 {savePath}{filename}.mp4')
+            try:
+                subprocess.check_output(command, stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError:
+                pass
+            command = shlex.split(f'rm {savePath}{filename}.h264')
+            try:
+                subprocess.check_output(command, stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError:
+                pass
+            del conversionItinerary[0]
+    writeFile = False
+    while not writeFile:
+        try:
+            with open('/share/Remotecode/conversion_itinerary.json', 'w') as file:
+                json.dump(conversionItinerary, file)
+                writeFile = True
+        except ValueError:
+            pass
+
     # Log results into log file and print to terminal
     print(f'Video Conversion: Conversion of {filename}.h264 into MP4 completed.')
     logging.debug(f'Video Conversion: Conversion of {filename}.h264 into MP4 completed.')
@@ -221,21 +278,21 @@ def preserve_storage(videoItinerary):   # Checks storage and deletes older video
         total, used, free = total // 2 ** 30, used // 2 ** 30, free // 2 ** 30
 
     # Update itinerary
-    with open('video_itinerary.json', 'w') as file:
+    with open('/share/Remotecode/video_itinerary.json', 'w') as file:
         json.dump(videoItinerary, file)
 
 
 def move_motor(moveTo, axisCentered=False):   # Launches motor_mover.py script which moves motor.
-    with open('motor_data.json', 'r') as file:  # File used to communicate with move_motor.py script
+    with open('/share/Remotecode/motor_data.json', 'r') as file:  # File used to communicate with move_motor.py script
         prevMotorData = json.load(file)
     frm = prevMotorData[1]
 
     if axisCentered is True:     # Moves motor directly to the moveTo value
         frm = prevMotorData[1]
         motorData = [frm, moveTo, motorPin]
-        with open('motor_data.json', 'w') as file:
+        with open('/share/Remotecode/motor_data.json', 'w') as file:
             json.dump(motorData, file)
-        command = shlex.split(f'python move_motor.py')
+        command = shlex.split(f'python /share/Remotecode/move_motor.py')
         subprocess.check_output(command, stderr=subprocess.STDOUT)
         print('Motor Controller: Motor centered')
         logging.debug('Motor Controller: Motor centered')
@@ -249,9 +306,9 @@ def move_motor(moveTo, axisCentered=False):   # Launches motor_mover.py script w
             motorData = [frm, 0, motorPin]
         else:
             motorData = [frm, moveTo, motorPin]
-        with open('motor_data.json', 'w') as file:
+        with open('/share/Remotecode/motor_data.json', 'w') as file:
             json.dump(motorData, file)
-        command = shlex.split(f'python move_motor.py')
+        command = shlex.split(f'python /share/Remotecode/move_motor.py')
         subprocess.check_output(command, stderr=subprocess.STDOUT)
 
 
