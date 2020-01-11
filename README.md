@@ -8,6 +8,15 @@ OpenCV, an open source visual processing library, to detect motion by capturing 
 and rotates towards the motion, recording while doing so. When the car is on the system would go back to being a regular
 dashcam that records on a loop.
 
+## Recording and Storing Video
+The *picamera* library provides the tools to record video to a file from the camera. The *start_recording()* method of the *PiCamera* class starts the recording and stores the video stream in a file with a specified format. The output file is in raw format, which presents an issue because it has to be converted to be viewable by most video players. The function *convert_video()* uses *subprocess.check_output* to launch a system installed program, *MP4Box*, that converts the video into viewable .mp4 format and also deletes the raw file after. Another problem is presented when large files need to be converted, as they can take minutes to convert. For example, in looped recording mode the program records 10min videos on loop which can take 2-3 minutes to convert, thus the program would have to wait that long before starting a new recording. The *multiprocessing* library is used to initiate the conversion of completed videos in the background, so that the program can start a new recording right away.
+
+### video_itinerary.json
+This file is used to keep track of all the completed videos by saving their file name and save path. This itinerary is used by the *preserve_storage()* function to delete older videos when the storage limit is reached.
+
+### convert_left_over_videos()
+The program may sometimes close unexpectedly when power is lost or due to user interruption. If a video is recording the file will be left unaccounted for. This function converts these left over videos from previous sessions. The file *conversion_itinerary.json* is used to keep track of leftover videos. For every recording that is started, the file name and save path is appended to this itinerary. If the file is then converted by *convert_video()* it is removed from this itinerary. Thus if the program shuts down unexpectedly before conversion, the video will be converted in the next session. 
+
 ## Motion Detection
 The libraries required for motion detection are *picamera*, *imutils*, and *OpenCV*. picamera gives us access
 to the camera module which is connected to the camera port of the Raspberry Pi and *picamera.array* contains the class
