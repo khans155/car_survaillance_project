@@ -69,5 +69,7 @@ To determine when to switch between looped recording mode and motion detection m
 This function from *main.py* returns ignition state of the car and also powers of the Raspberry Pi if it operates on battery power for too long. The function is called throughout the main program at various points to ensure that the car turning on or off changes the program from one mode to another.
 
 ## Power System
-The Raspberry Pi needed a power source to operate off of when the car is turned off and the ability to switch from batter power to car auxillary power. A 20 000 mAh battery pack is used as the battery, which can last a decent amount of time, in my experience about 12 hours when fully charged. To switch between battery and car auxillary power a relay is used, along with a capacitor to smooth out interuptions. A DC stepdown converter is used to drop the 12V of the battery and car auxillary power down to the 5V required by the Pi. The car auxillary power also charges the battery pack when the car is turned on. 
+The Raspberry Pi needed a power source to operate off of when the car is turned off and the ability to switch from battery power to car auxiliary power. A 20 000 mAh battery pack is used as the battery, which can last a decent amount of time, in my experience about 12 hours when fully charged. To switch between battery and car auxiliary power a relay is used, along with a capacitor to smooth out interruptions. A DC step down converter is used to drop the 12V battery and car auxiliary power down to the 5V required by the Pi. The car auxiliary power also charges the battery pack when the car is turned on. The circuit is shown in the below image. 
+
+![alt text](https://github.com/khans155/car_survaillance_project/blob/master/src/power_circuit.jpg)
 
