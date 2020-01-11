@@ -16,15 +16,15 @@ recording_len = 10 * 60  # 10 min video loop for ignition on recording
 ignitionPin = 12  # Raspberry Pi board location of ignition pin
 motorPin = 11  # Raspberry Pi board location of ignition pin
 maxStorage = 70  # Maximum storage allowed in GB for video files
-motion_record_len = 5 * 60  # Minimum 5 min video for motion detection
+motion_record_len = 1 * 60  # Minimum 1 min video for motion detection
 logging.basicConfig(filename="/share/Remotecode/program_logs.log", level=logging.DEBUG)
 timeAtIgnitionOff = None
-batteryLimit = 1  # Limit of how long raspi can operate on battery in hours
+batteryLimit = 2  # Limit of how long Raspberry Pi can operate on battery in hours
 ignitionState = None
 
 
 # Main program that runs on loop
-def action():  # Initialize motor, make sure its centered
+def action():
     timeNow = dt.datetime.now().strftime('%H:%M')
     print(f'{timeNow} - MAIN: Program initiated.')
     logging.debug(f'{timeNow} - MAIN: Program initiated.')
@@ -38,12 +38,12 @@ def action():  # Initialize motor, make sure its centered
             with picamera.PiCamera() as camera:
                 print('MAIN: Looped recording mode initiated.')
                 logging.debug('MAIN: Looped recording mode initiated.')
-                camera.resolution = (1280, 720)
+                camera.resolution = (1920, 1080)
                 camera.framerate = 30
                 time.sleep(1)  # Give time for the camera to warm up
                 savePath = '/share/Remotecode/ignition_on_recordings/'
                 filename = dt.datetime.now().strftime('%d_%m_20%y__%H_%M_%S')
-                camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=1000000)
+                camera.start_recording(f'{savePath}{filename}.h264', format='h264', bitrate=10000000)
                 add_to_conversion_itinerary([filename, savePath])
                 print(f'Ignition on: New recording started at {filename}...')
                 logging.debug(f'Ignition on: New recording started at {filename}...')
@@ -333,13 +333,8 @@ def preserve_storage(videoItinerary):  # Checks storage and deletes older videos
 
 
 def move_motor(moveTo, axisCentered=False):  # Launches motor_mover.py script which moves motor.
-    with open('/share/Remotecode/motor_data.json', 'r') as file:  # File used to communicate with move_motor.py script
-        prevMotorData = json.load(file)
-    frm = prevMotorData[1]
-
     if axisCentered is True:  # Moves motor directly to the moveTo value
-        frm = prevMotorData[1]
-        motorData = [frm, moveTo, motorPin]
+        motorData = [250, moveTo, motorPin]
         with open('/share/Remotecode/motor_data.json', 'w') as file:
             json.dump(motorData, file)
         command = shlex.split(f'python /share/Remotecode/move_motor.py')
@@ -348,12 +343,16 @@ def move_motor(moveTo, axisCentered=False):  # Launches motor_mover.py script wh
         logging.debug('Motor Controller: Motor centered')
 
     else:  # Converts moveTo value from camera range to motor range then moves motor.
+        with open('/share/Remotecode/motor_data.json',
+                  'r') as file:  # File used to communicate with move_motor.py script
+            prevMotorData = json.load(file)
+        frm = prevMotorData[1]
         # Calculation is based on motor range of motion, frame width, and camera field of view.
         moveTo = (moveTo - 250 + frm) * 0.72222  # 0.72222 factor used to compensate for camera field of view
-        if moveTo > 500:  # 500 corresponds to 180 degrees and motor cant move past that
-            motorData = [frm, 500, motorPin]
-        elif moveTo < 0:  # 0 corresponds to 0 degrees and motor cant move past that
-            motorData = [frm, 0, motorPin]
+        if moveTo > 400:  # 500 corresponds to 180 degrees and motor cant move past that
+            motorData = [frm, 400, motorPin]
+        elif moveTo < 100:  # 0 corresponds to 0 degrees and motor cant move past that
+            motorData = [frm, 100, motorPin]
         else:
             motorData = [frm, moveTo, motorPin]
         with open('/share/Remotecode/motor_data.json', 'w') as file:

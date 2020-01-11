@@ -5,7 +5,7 @@ import json
 
 def update_motor():
 
-    with open('motor_data.json', 'r') as file:
+    with open('/share/Remotecode/motor_data.json', 'r') as file:
         motorData = json.load(file)
 
     motorPin = motorData[2]
