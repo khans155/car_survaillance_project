@@ -9,9 +9,9 @@ and rotates towards the motion, recording while doing so. When the car is on the
 dashcam that records on a loop.
 
 ## Motion Detection
-The libraries required for motion detection are *picamera*, *picamera.array*, and *OpenCV*. picamera gives us access
-to the camera module which is connected to the camera port of the Raspberry Pi. picamera.array contains the class
-*PiRGBArray* which returns frames from the camera as arrays of RGB values. This array format is required to process the frames in OpenCV. OpenCV contains a whole bunch of stuff that can be used to process frames. The basic idea is to continuously capture frames from the camera in the form of RGB arrays and compare them to previously captured frames to see if there is a big enough difference, which would in ideal conditions indicate motion. Here's a simplified explaination of how the comparison is done. 
+The libraries required for motion detection are *picamera*, *imutils*, and *OpenCV*. picamera gives us access
+to the camera module which is connected to the camera port of the Raspberry Pi and *picamera.array* contains the class
+*PiRGBArray* which returns frames from the camera as arrays of RGB values. This array format is required to process the frames in OpenCV. OpenCV and imutils contains a whole bunch of stuff that can be used to process frames. The basic idea is to continuously capture frames from the camera in the form of RGB arrays and compare them to previously captured frames to see if there is a big enough difference, which would in ideal conditions indicate motion. Here's a simplified explaination of how the comparison is done. 
 ```python
 for capture in camera.capture_continuous(rawCapture, format='bgr', use_video_port=True):
   frame = capture.array
@@ -46,3 +46,10 @@ Each frame that is captured is resized to have a width of 500, to reduce computa
 Various additions are made to the above code in *main.py* to allow for recording, moving the motor, ignition detection, and stability. One important change that is made is allowing the motion detection to pause while the motor is moving the camera, otherwise that motion is detected. This is done by determining the number of frames that have to be skipped from the time it will take the motor to the new position, and the frame rate of the camera.
 
 ## Motor Response To Motion
+The servo motor used is SG90 which has a range of motion 0 to 180 degrees. Signals with duty cycles between 2.5% to 12.5% are used to move the motor between 0 and 180 degrees. The relation between the two is linear. The Raspberry Pi I/O pins and the *RPi.GPIO* library is used to communicate with the motor. The value retrieved from the motion detection code (in contourX) is a value between 0 and 500. This value has to be converted to a value of duty cycle inorder to tell the motor where to move. This is done by the equation: `dutyCycle = 0.02 * contourX + 2.5`
+
+The motor is positioned such that the forward direction (front of the car) corresponds to the motors 90 degree position, thus allowing the motor to move 90 degrees towards the left and right of the car. The current position of the motor must be considered when determining where to move the motor to when the camera detects motion. The camera's field of view must also be considered, so that the motor doesn't 'over-turn' in response to motion. For this particular camera, the field of view is stated to be 130 degrees, thus 0 to 500 pixels correspond to 0 to 130 degrees. The *move_motor()* function in *main.py* does these calculations.
+
+### move_motor.py
+The script that actually communicates with the motor is located here, separate from the main program. I found it more stable to separate this part of the program, as the motor behaves unpredictably accessed from the same session twice. The *subprocess* library is used to launch this script from *main.py* and *motor_data.json* is used to communicate between the two programs as well as store the current position of the motor. 
+ 
