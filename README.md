@@ -51,5 +51,11 @@ The servo motor used is SG90 which has a range of motion 0 to 180 degrees. Signa
 The motor is positioned such that the forward direction (front of the car) corresponds to the motors 90 degree position, thus allowing the motor to move 90 degrees towards the left and right of the car. The current position of the motor must be considered when determining where to move the motor to when the camera detects motion. The camera's field of view must also be considered, so that the motor doesn't 'over-turn' in response to motion. For this particular camera, the field of view is stated to be 130 degrees, thus 0 to 500 pixels correspond to 0 to 130 degrees. The *move_motor()* function in *main.py* does these calculations.
 
 ### move_motor.py
-The script that actually communicates with the motor is located here, separate from the main program. I found it more stable to separate this part of the program, as the motor behaves unpredictably accessed from the same session twice. The *subprocess* library is used to launch this script from *main.py* and *motor_data.json* is used to communicate between the two programs as well as store the current position of the motor. 
- 
+The script that actually communicates with the motor is located here, separate from the main program. I found it more stable to separate this part of the program, as the motor behaved unpredictably when accessed from the same session twice. The *subprocess* library is used to launch this script from *main.py* and *motor_data.json* is used to communicate between the two programs as well as store the current position of the motor. 
+
+## Ignition Detection
+To determine when to switch between looped recording mode and motion detection mode, the program needed a way to detect the ignition of the car. My cars cigarette lighter ports conveniently only provide power when the car ignition is on. The I/O pins of the Raspberry Pi can support a maximum of 3.3V, while the car supplies 12V. Thus, a DC step down converter is used to bring that down to 3.3V.
+
+### check_ignition()
+This function from *main.py* returns ignition state of the car and also powers of the Raspberry Pi if it operates on battery power for too long. The function is called throughout the main program at various points to ensure that the car turning on or off changes the program from one mode to another.
+
