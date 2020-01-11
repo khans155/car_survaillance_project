@@ -9,27 +9,38 @@ and rotates towards the motion, recording while doing so. When the car is on the
 dashcam that records on a loop.
 
 ## Motion Detection
-The libraries requiered for motion detection are *picamera*, *picamera.array*, and *OpenCV*. picamera gives us access
-to the camera module which is contected to the camera port of the Raspberry Pi. picamera.array contains the class 
-*PiRGBArray* which returns frames from the camera as arrays of RGB values. This array format is required to process the frames in OpenCV. OpenCV contains a whole bunch of stuff that can be used to preocess frames. The basic idea is to continously capture frames from the camera in the form of RGB arrays and compare them to previously captured frames to see if there is a big eneough difference, which would in ideal conditions indicate motion. Heres how the comparison is done. 
+The libraries required for motion detection are *picamera*, *picamera.array*, and *OpenCV*. picamera gives us access
+to the camera module which is connected to the camera port of the Raspberry Pi. picamera.array contains the class
+*PiRGBArray* which returns frames from the camera as arrays of RGB values. This array format is required to process the frames in OpenCV. OpenCV contains a whole bunch of stuff that can be used to process frames. The basic idea is to continuously capture frames from the camera in the form of RGB arrays and compare them to previously captured frames to see if there is a big enough difference, which would in ideal conditions indicate motion. Here's a simplified explaination of how the comparison is done. 
 ```python
 for capture in camera.capture_continuous(rawCapture, format='bgr', use_video_port=True):
-  if avg is None:
-      avg = gray.copy().astype("float")
-      rawCapture.truncate(0)
-      continue
   frame = capture.array
   frame = imutils.resize(frame, width=width)  
   gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
   gray = cv2.GaussianBlur(gray, (21, 21), 0)
+  if avg is None:
+    avg = gray.copy().astype("float")
+    rawCapture.truncate(0)
+    continue
   cv2.accumulateWeighted(gray, avg, 0.5)
   frameDelta = cv2.absdiff(gray, cv2.convertScaleAbs(avg))
   thresh = cv2.threshold(frameDelta, 7, 255, cv2.THRESH_BINARY)[1]
   thresh = cv2.dilate(thresh, None, iterations=5)
   contours = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
   contours = imutils.grab_contours(contours)
+  contourX = 0
+  contourXlen = 0
   for cnt in contours:
     if (cv2.contourArea(cnt) < 4000) or (cv2.contourArea(cnt) > 40000):
       continue
     (x, y, w, h) = cv2.boundingRect(cnt)
+    contourX += x + w / 2
+    contourXlen += 1
+  if contourXlen != 0:
+    contourX = contourX / contourXlen
+    i = 0
+    contourX = (contourX // 10) * 10
 ```
+Each frame that is captured is resized to have a width of 500, to reduce computational time. The frame is then changed to grayscale, to further remove unnecessary data, and blurred to remove some noise that can interfere with detection. The first frame captured is used to initialize the *avg* variable, which is to be the average of previous frames that new frames are compared to. Background subtraction is used to determine the difference in frames, which is performed by the *cv2.absdiff* function which simply takes the difference of the current frame and the average of the previous frames. The *cv2.threshold* function ensures only a big enough difference is detected. The *cv2.findContours* and *imutils.grab_contours* functions create and retrieve contours that bound the areas highlighted by *frameDelta*. The resulting contours are used with *cv2.boundingRect* to determine the x coordinate of the centre of the contours, which are averaged for all contours and stored in *contourX*. contourX is now the value that can be used to determine how the servo motor responds.
+
+Various additions are made to the above code in *main.py* to allow for recording, moving the motor, ignition detection, and stability. One important change that is made is allowing the motion detection to pause while the motor is moving the camera, otherwise that motion is detected. This is done by determining the number of frames that have to be skipped from the time it will take the motor to the new position, and the frame rate of the camera.
