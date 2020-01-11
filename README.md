@@ -1,6 +1,18 @@
 # Car Surveillance Project
 A project with the aim to create a car surveillance system using a Raspberry Pi, a camera, the OpenCV library, and Python.
 
+
+## Contents
+#### *Intro*
+#### *Recording and Storing Video*
+#### *Motion Detection*
+#### *Motor Response to Motion*
+#### *Ignition Detection*
+#### *Mounting Camera and Motor*
+#### *Power System*
+#### *Sample Videos*
+
+
 ## Intro
 Initially my goal was to make a simple dash cam system from a camera module and Raspberry Pi board. Searching for
 tutorials on how to use the camera module in Python, I came across an article on *pyimagesearch.com* describing how to use
