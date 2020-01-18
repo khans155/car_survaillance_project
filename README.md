@@ -105,8 +105,14 @@ The Raspberry Pi needed a power source to operate off of when the car is turned 
 
 ## Sample Videos
 
+
 ### Sentry Mode (Motion detection)
-Video showing motion detection:
+Camera motion detection demonstration:
+
+<a href="https://youtu.be/JtqSEtPYMtE" target="_blank"><img src="http://img.youtube.com/vi/JtqSEtPYMtE/0.jpg"
+alt="IMAGE ALT TEXT HERE" width="240" height="180" border="10" /></a>
+
+Recording from sentry mode:
 
 <a href="https://youtu.be/G40hayJGPUg" target="_blank"><img src="http://img.youtube.com/vi/G40hayJGPUg/0.jpg"
 alt="IMAGE ALT TEXT HERE" width="240" height="180" border="10" /></a>
