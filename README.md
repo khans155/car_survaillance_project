@@ -36,9 +36,17 @@ To handle unexpected shutdowns (e.g., power loss), the system uses `conversion_i
 ---
 
 ## Motion Detection
-The libraries required for motion detection are *picamera*, *imutils*, and *OpenCV*. picamera gives us access
-to the camera module which is connected to the camera port of the Raspberry Pi. *picamera.array* contains the class
-*PiRGBArray* which returns frames from the camera as arrays of RGB or BGR values. This array format is required to process the frames in OpenCV, which uses the BGR array format. OpenCV and imutils contains a whole bunch of stuff that can be used to process frames. The basic idea is to continuously capture frames from the camera in the form of BGR arrays and compare them to previously captured frames to see if there is a big enough difference, which would in ideal conditions indicate motion. Here's a simplified explanation of how the comparison is done.
+he libraries required for motion detection are **picamera**, **imutils**, and **OpenCV**. 
+
+* **picamera**: Gives us access to the camera module which is connected to the camera port of the Raspberry Pi. 
+* **picamera.array**: Contains the class `PiRGBArray` which returns frames from the camera as arrays of RGB or BGR values. This array format is required to process the frames in OpenCV, which uses the BGR array format. 
+* **OpenCV and imutils**: Contains a whole bunch of stuff that can be used to process frames. 
+
+
+
+The basic idea is to continuously capture frames from the camera in the form of BGR arrays and compare them to previously captured frames to see if there is a big enough difference, which would in ideal conditions indicate motion. 
+
+Here's a simplified explanation of how the comparison is done:
 ```python
 for capture in camera.capture_continuous(rawCapture, format='bgr', use_video_port=True):
   frame = capture.array
@@ -68,9 +76,19 @@ for capture in camera.capture_continuous(rawCapture, format='bgr', use_video_por
     i = 0
     contourX = (contourX // 10) * 10
 ```
-Each frame that is captured is resized to have a width of 500, to reduce computational time. The frame is then changed to grayscale, to further remove unnecessary data, and blurred to remove some noise that can interfere with detection. The first frame captured is used to initialize the *avg* variable, which is to be the average of previous frames that new frames are compared to. Background subtraction is used to determine the difference in frame arrays, which is performed by the *cv2.absdiff* function by simply taking the difference between the current frame and the average of the previous frames. The *cv2.findContours* and *imutils.grab_contours* functions create and retrieve contours that bound the areas highlighted by *frameDelta*. The resulting contours are used with *cv2.boundingRect* to determine the x coordinate of the centre of the contours, which are averaged for all contours and stored in *contourX*. contourX is now the value that can be used to determine how the servo motor responds.
+Each frame that is captured is processed through the following steps:
 
-Various additions are made to the above code in *main.py* to allow for recording, moving the motor, ignition detection, and stability. One important change that is made is allowing the motion detection to pause while the motor is moving the camera, otherwise that movement is detected as motion. This is done by resetting the avg variable and determining the number of frames that have to be skipped from: the time it will take the motor to the new position; the frame rate of the camera.
+* **Preprocessing**: The frame is resized to have a width of 500 to reduce computational time. It is then changed to grayscale to further remove unnecessary data, and blurred to remove some noise that can interfere with detection.
+* **Initialization**: The first frame captured is used to initialize the `avg` variable, which is to be the average of previous frames that new frames are compared to.
+* **Background Subtraction**: Used to determine the difference in frame arrays, which is performed by the `cv2.absdiff` function by simply taking the difference between the current frame and the average of the previous frames.
+* **Contouring**: The `cv2.findContours` and `imutils.grab_contours` functions create and retrieve contours that bound the areas highlighted by `frameDelta`.
+* **Targeting**: The resulting contours are used with `cv2.boundingRect` to determine the x coordinate of the centre of the contours, which are averaged for all contours and stored in `contourX`. `contourX` is now the value that can be used to determine how the servo motor responds.
+
+Various additions are made to the above code in `main.py` to allow for recording, moving the motor, ignition detection, and stability. 
+
+One important change that is made is allowing the motion detection to pause while the motor is moving the camera, otherwise that movement is detected as motion. This is done by resetting the `avg` variable and determining the number of frames that have to be skipped from:
+1. The time it will take the motor to the new position.
+2. The frame rate of the camera.
 
 ---
 
